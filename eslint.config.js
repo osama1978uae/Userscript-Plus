@@ -1,13 +1,22 @@
-import { defineConfig } from 'eslint/config';
-
+// @ts-check
 import globals from 'globals';
-import pluginJs from '@eslint/js';
+import eslint from '@eslint/js';
+import { defineConfig } from 'eslint/config';
 import eslintConfigPrettier from 'eslint-config-prettier/flat';
+import tseslint from 'typescript-eslint';
+// import html from '@html-eslint/eslint-plugin';
 
 export default defineConfig([
-  pluginJs.configs.recommended,
+  eslint.configs.recommended,
+  tseslint.configs.recommended,
   eslintConfigPrettier,
+  // {
+  //   ...html.configs['flat/recommended'],
+  //   files: ['**/*.html'],
+  //   extends: [tseslint.configs.disableTypeChecked]
+  // },
   {
+    files: ['src/js/*.js'],
     rules: {
       'no-var': 'error',
       'prefer-const': ['error', { destructuring: 'all' }],
@@ -19,13 +28,8 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
-      globals: globals.es2024
-    }
-  },
-  {
-    files: ['src/js/*.js'],
-    languageOptions: {
       globals: {
+        ...globals.es2024,
         ...globals.browser,
         ...globals.webextensions
       }
@@ -33,12 +37,21 @@ export default defineConfig([
   },
   {
     files: ['src/UserJS/main.js'],
+    rules: {
+      'no-var': 'error',
+      'prefer-const': ['error', { destructuring: 'all' }],
+      'prefer-promise-reject-errors': 'error',
+      'prefer-regex-literals': ['error', { disallowRedundantWrapping: true }],
+      quotes: ['error', 'single', { avoidEscape: true, allowTemplateLiterals: false }],
+      'space-before-blocks': ['error', 'always']
+    },
     languageOptions: {
       sourceType: 'script',
       globals: {
         main_css: 'readonly',
         translations: 'writable',
         userjs: 'writable',
+        ...globals.es2024,
         ...globals.browser,
         ...globals.greasemonkey
       }
@@ -46,24 +59,58 @@ export default defineConfig([
   },
   {
     files: ['src/UserJS/header.js'],
+    rules: {
+      quotes: 'off',
+      'no-unused-vars': 'off',
+      'no-unused-expressions': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-expressions': 'off'
+    },
     languageOptions: {
       sourceType: 'script',
       globals: {
         code: 'readonly',
         metadata: 'readonly',
         languageList: 'readonly',
-        ...globals.browser
+        ...globals.es2024,
+        ...globals.browser,
+        ...globals.greasemonkey
       }
-    },
-    rules: {
-      quotes: 'off',
-      'no-unused-vars': 'off'
     }
   },
   {
     files: ['tools/*.js', 'utils/**/*.js'],
+    rules: {
+      'no-var': 'error',
+      'prefer-const': [
+        'error',
+        {
+          destructuring: 'any',
+          ignoreReadBeforeAssign: false
+        }
+      ],
+      'prefer-promise-reject-errors': 'error',
+      'prefer-regex-literals': [
+        'error',
+        {
+          disallowRedundantWrapping: true
+        }
+      ],
+      quotes: [
+        'error',
+        'single',
+        {
+          avoidEscape: true,
+          allowTemplateLiterals: false
+        }
+      ],
+      'space-before-blocks': ['error', 'always']
+    },
     languageOptions: {
-      globals: globals.node
+      globals: {
+        ...globals.es2024,
+        ...globals.node
+      }
     }
   }
 ]);

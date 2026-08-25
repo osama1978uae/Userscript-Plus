@@ -1,157 +1,146 @@
-/* eslint-env node */
 'use strict';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { merge } from 'webpack-merge';
 import CopyPlugin from 'copy-webpack-plugin';
 import TerserPlugin from 'terser-webpack-plugin';
+// import { compile } from 'sass-embedded';
 
+/**
+ * @typedef { import('@types/webpack').Configuration } Configuration
+ */
+
+/**
+ * Transform parameter into string
+ * @template O
+ * @param {O} obj
+ * @returns {string}
+ */
+const objToStr = (obj) => {
+  try {
+    return Object.prototype.toString.call(obj).match(/\[object (.*)\]/)?.[1] || '';
+  } catch {
+    return '';
+  }
+};
+/**
+ * Parameter is `JSON Object`
+ * @template O
+ * @param {O} obj
+ * @returns {obj is Record<PropertyKey, unknown>}
+ */
+const isObj = (obj) => /Object/.test(objToStr(obj));
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const access = fs.promises.access;
-const constants = fs.promises.constants;
-const readFile = fs.promises.readFile;
+/**
+ * @param {string} dir
+ */
 const file = (dir) => path.resolve(path.resolve(__dirname, '..'), dir);
+/**
+ * @param {import('node:fs').PathLike} filePath
+ * @param {string} encoding
+ */
+const canAccess = async (filePath, encoding) => {
+  if (encoding == null) encoding = 'utf-8';
+  await fs.promises.access(filePath, fs.promises.constants.R_OK | fs.promises.constants.W_OK);
+  const data = await fs.promises.readFile(filePath, encoding);
+  return data.toString(encoding);
+};
 const globOptions = {
   dot: true,
   gitignore: true,
   ignore: ['**/*.txt']
 };
 /**
- * Object is `null` or `undefined`
- * @template O
- * @param { O } obj
- * @returns { boolean }
+ * @template {import('@types/webpack').StatsOptions} O
+ * @param {O["env"]} env
+ * @param {Configuration} args
  */
-const isNull = (obj) => {
-  return Object.is(obj, null) || Object.is(obj, undefined);
-};
-const canAccess = (filePath, encoding = 'utf-8') => {
-  return new Promise((resolve, reject) => {
-    access(filePath, constants.R_OK | constants.W_OK).then((testAccess) => {
-      if (isNull(testAccess)) {
-        resolve(readFile(filePath, encoding).then((data) => data.toString()));
-      }
-      reject(new Error(`Cannot access provided filePath: ${filePath}`));
-    });
-  });
-};
-const fileToJSON = async (filePath, encoding = 'utf-8') => {
-  const testAccess = await canAccess(filePath, encoding);
-  return JSON.parse(testAccess);
-};
-export default async (env, args) => {
-  if (!env) {
-    throw new Error('--env flag required')
-  }
-  if (!env.brws) {
-    throw new Error('--env brws=<Web Browser> flag required')
-  }
-  const brws = env.brws;
-  const webExtDir = `build/${brws}`;
-  const webExtSrc = 'src';
-  const plugins = [
-    new CopyPlugin({
-      patterns: [
-        {
-          from: file(`${webExtSrc}/manifest/${brws}.json`),
-          to: file(`${webExtDir}/manifest.json`),
-          async transform(content) {
-            const { version, author, homepage: homepage_url } = await fileToJSON('./package.json');
-            const manifest = JSON.parse(content);
-            return JSON.stringify(
-              Object.assign(manifest, {
-                version,
-                author,
-                homepage_url
-              }),
-              null,
-              ' '
-            );
+const main = async (env, args) => {
+  if (!isObj(env)) throw new Error('--env flag required');
+  if (!('brws' in env) || typeof env.brws !== 'string')
+    throw new Error('--env brws=<Web Browser> flag required');
+  const { brws } = env;
+  const $src = 'src';
+  const $dir = `build/${brws}`;
+  const $dirs = ['_locales', 'img', 'js', 'webfonts', ['html', '[name][ext]']];
+
+  const patterns = [
+    {
+      from: file(`${$src}/manifest/manifest.json`),
+      to: file(`${$dir}/manifest.json`),
+      /**
+       * @param {string} content
+       */
+      async transform(content) {
+        const {
+          version,
+          author,
+          homepage: homepage_url
+        } = JSON.parse((await canAccess('./package.json')) ?? '{}');
+        const webextManifest = JSON.parse(
+          await canAccess(file(`${$src}/manifest/${brws}.json`) ?? '{}')
+        );
+        const Manifest = JSON.parse(content);
+        if ('$scheme' in Manifest) delete Manifest.$scheme;
+        for (const [key, value] of Object.entries(webextManifest)) {
+          if (key === '$scheme') continue;
+          if (isObj(value)) {
+            if (!isObj(Manifest[key])) Manifest[key] = {};
+            for (const [k, v] of Object.entries(value)) {
+              Manifest[key][k] = v;
+            }
+          } else {
+            Manifest[key] = value;
           }
-        },
-        {
-          from: file(`${webExtSrc}/_locales`),
-          to: file(`${webExtDir}/_locales`),
-          globOptions
-        },
-        {
-          from: file(`${webExtSrc}/html`),
-          to: file(`${webExtDir}/[name][ext]`),
-          globOptions
-        },
-        {
-          from: file(`${webExtSrc}/img`),
-          to: file(`${webExtDir}/img`),
-          globOptions
-        },
-        {
-          from: file(`${webExtSrc}/webfonts`),
-          to: file(`${webExtDir}/webfonts`),
-          globOptions
-        },
-        // {
-        //   from: file(`${webExtSrc}/web_accessible_resources`),
-        //   to: file(`${webExtDir}/web_accessible_resources`),
-        //   globOptions
-        // },
-        {
-          from: file(`${webExtSrc}/js`),
-          to: file(`${webExtDir}/js`),
-          globOptions
-          // force: true,
         }
-      ]
-    })
+        Object.assign(Manifest, {
+          version,
+          author,
+          homepage_url
+        });
+        return JSON.stringify(Manifest, null, ' ');
+      }
+    }
   ];
+  for (const f of $dirs) {
+    if (Array.isArray(f)) {
+      patterns.push({
+        from: file(`${$src}/${f[0]}`),
+        to: file(`${$dir}/${f[1]}`),
+        globOptions
+      });
+    } else if (typeof f === 'string') {
+      patterns.push({
+        from: file(`${$src}/${f}`),
+        to: file(`${$dir}/${f}`),
+        globOptions
+      });
+    }
+  }
   /**
-   * @type { import('@types/webpack').Configuration }
+   * @type { Configuration }
    */
   const Config = {
-    context: file(webExtSrc),
+    context: file($src),
     entry: {
-      mu: './js/mu.js'
+      entry: './js/entry.js'
     },
     output: {
-      path: file(`${webExtDir}/js`),
+      path: file(`${$dir}/js`),
       clean: true,
       filename: '[name].js',
-      publicPath: `/${webExtDir}`
-    },
-    module: {
-      rules: [
-        {
-          test: /\.m?js$/,
-          exclude: /(node_modules|bower_components)/,
-          use: {
-            loader: 'swc-loader',
-            options: {
-              sync: true,
-              jsc: {
-                parser: {
-                  syntax: 'ecmascript'
-                },
-                target: 'es2020'
-              },
-              module: {
-                type: 'es6'
-              }
-            }
-          }
-        }
-      ]
+      publicPath: `/${$dir}`
     },
     resolve: {
       extensions: ['.js']
     },
-    plugins,
-    node: false,
-    performance: {
-      hints: false
-    }
+    plugins: [new CopyPlugin({ patterns })],
+    node: false
   };
   /**
-   * @type { import('@types/webpack').Configuration }
+   * @type { Configuration }
    */
   const Production = {
     mode: 'production',
@@ -171,7 +160,7 @@ export default async (env, args) => {
     }
   };
   /**
-   * @type { import('@types/webpack').Configuration }
+   * @type { Configuration }
    */
   const Development = {
     mode: 'development',
@@ -181,15 +170,23 @@ export default async (env, args) => {
     },
     watch: true,
     watchOptions: {
-      ignored: /(node_modules|bower_components)/
+      ignored: [
+        '**/node_modules',
+        '**/bower_components',
+        '**/build',
+        '**/tools',
+        '**/utils',
+        '**/*.ts'
+      ]
     }
   };
-  switch (args.mode) {
-    case 'development':
-      return merge(Config, Development);
-    case 'production':
-      return merge(Config, Production);
-    default:
-      throw new Error('No matching configuration was found!');
+  if (args.mode === 'development') {
+    return merge(Config, Development);
+  } else if (args.mode === 'production') {
+    return merge(Config, Production);
+  } else {
+    throw new Error('No matching configuration was found!');
   }
 };
+
+export default main;

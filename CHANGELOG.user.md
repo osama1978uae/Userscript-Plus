@@ -13,7 +13,30 @@
 * Finish translations.
 * Finish blacklist section.
 * GitHub engine - filter out UserScript and UserStyles that don't match the host
-* Rework TrustedTypePolicy code
+
+## v8.0.0
+
+> `window.CustomElements` on YouTube is broken, see [Issue #63](https://github.com/magicoflolis/Userscript-Plus/issues/63#issuecomment-5387786910)
+
+* Added to `@exclude-match`:
+  * Youtube.com - _No work around as of yet_
+  * Netflix.com - _"too much recursion error"_
+
+## v7.6.9 to v7.6.11
+
+* Bug fixes:
+  * Fixed all polyfills for `GM.*` and `GM_*`
+  * Fixed search functionality
+* Config changes:
+  * Major storage improvement to config - only _modified_ settings are now stored, reducing storage size
+  * Moved `engineUnsupported` into each engine
+* Internal changes:
+  * Reworked event handlers for some elements
+* General changes:
+  * Added timestamp to file names for all downloaded files
+  * Reworked TrustedTypePolicy code
+
+---
 
 ## v7.6.8
 

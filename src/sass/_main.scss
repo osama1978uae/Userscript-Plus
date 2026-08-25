@@ -99,13 +99,15 @@ td.mujs-list {
   border-color: hsl(0, 100%, 50%) !important;
 }
 
-mujs-tabs,
+mujs-config,
+tab-root,
 mujs-column,
 mujs-row,
 .mujs-sty-flex {
   display: flex;
 }
 
+mujs-config,
 mujs-column,
 mujs-row {
   gap: 0.5em;
@@ -113,19 +115,19 @@ mujs-row {
 
 mujs-column {
   count-frame {
-    &[data-counter='greasyfork'] {
+    &[data-type='greasyfork'] {
       background: var(--mujs-gf-color, hsl(204, 100%, 40%));
     }
 
-    &[data-counter='sleazyfork'] {
+    &[data-type='sleazyfork'] {
       background: var(--mujs-sf-color, hsl(12, 86%, 50%));
     }
 
-    &[data-counter='github'] {
+    &[data-type='github'] {
       background: hsla(213, 13%, 16%);
     }
 
-    &[data-counter='openuserjs'] {
+    &[data-type='openuserjs'] {
       background: hsla(12, 86%, 50%, 0.568);
     }
   }
@@ -135,6 +137,7 @@ mujs-column {
   }
 }
 
+mujs-config,
 mujs-row {
   flex-flow: column wrap;
 }
@@ -200,7 +203,7 @@ mujs-main {
     display: flex;
     place-content: space-between;
 
-    mujs-tabs {
+    tab-root {
       overflow: hidden;
       order: 0;
     }
@@ -217,7 +220,7 @@ mujs-main {
     }
   }
 
-  mujs-tabs {
+  tab-root {
     gap: 0.5em;
     text-align: center;
     -webkit-user-select: none;
@@ -226,7 +229,7 @@ mujs-main {
     user-select: none;
     flex-flow: row wrap;
 
-    mujs-tab {
+    tab-content {
       padding: 0.25em;
       min-width: 150px;
       width: -webkit-fit-content;
@@ -255,7 +258,7 @@ mujs-main {
         }
       }
 
-      mujs-host {
+      tab-host {
         float: left;
         overflow: auto;
         overflow-wrap: break-word;
@@ -263,12 +266,12 @@ mujs-main {
         white-space: nowrap;
       }
 
-      mu-js {
+      tab-close {
         float: right;
       }
     }
 
-    mujs-addtab {
+    tab-add {
       order: 999999999999;
       font-size: 20px;
       padding: 0px 0.25em;
@@ -279,7 +282,6 @@ mujs-main {
     }
   }
 
-  mujs-tab,
   mujs-btn,
   input {
     width: -webkit-fit-content;
@@ -328,7 +330,7 @@ mujs-main {
   }
 
   th,
-  .mujs-cfg *:not(input[type='password'], input[type='text'], input[type='number']) {
+  mujs-config *:not(input[type='password'], input[type='text'], input[type='number']) {
     -webkit-user-select: none !important;
     -moz-user-select: none !important;
     -ms-user-select: none !important;
@@ -374,6 +376,7 @@ mujs-main {
       text-align: center;
       padding: 0.5em;
       z-index: 1;
+      top: 1%;
 
       .prompt-head {
         font-size: 18px;
@@ -411,7 +414,7 @@ mujs-main {
   }
 }
 
-.mainframe {
+mujs-mainframe {
   background: transparent;
   position: fixed;
   bottom: var(--mujs-position-bottom, 1rem);
@@ -567,6 +570,7 @@ mujs-body {
             @media screen and (max-width: 800px) {
               flex-flow: column wrap;
 
+              > mujs-config,
               > mujs-row {
                 align-content: center;
               }
@@ -613,7 +617,7 @@ mujs-body {
       background: hsla(222, 14%, 33%, 0.75);
       border-bottom: 1px solid var(--mujs-txt-color, hsl(0, 0%, 100%));
 
-      &.mujs-header-name {
+      &[data-tag="name"] {
         width: 50%;
 
         @media screen and (max-width: 800px) {
@@ -859,19 +863,19 @@ mujs-body {
 }
 
 @media screen and (max-width: 1150px) {
-  .mujs-cfg {
+  mujs-config {
     margin: 0px auto 1rem auto !important;
   }
 }
 
-.mujs-cfg {
+mujs-config {
   mujs-section {
     border-radius: 16px;
     padding: 0.5em;
 
     &:nth-child(even) {
       background: var(--mujs-even-row, hsl(222, 14%, 18%)) !important;
-      
+
       input,
       select {
         background: var(--mujs-odd-row, hsl(222, 14%, 33%));
@@ -906,7 +910,7 @@ mujs-body {
     &[data-name='theme'] {
       .sub-section {
         border-radius: 4px;
-        
+
         &:nth-child(even) {
           background: var(--mujs-even-row, hsl(222, 14%, 18%));
         }
@@ -1128,6 +1132,10 @@ mujs-body {
   height: -moz-fit-content;
   height: -webkit-fit-content;
 
+  display: flex;
+  flex-flow: column wrap;
+  gap: 0.5em;
+
   @media screen and (max-height: 720px) {
     &:not(.webext-page) {
       height: 100%;
@@ -1191,11 +1199,11 @@ mu-jsbtn {
 mujs-a,
 mu-jsbtn,
 .mujs-pointer,
-.mujs-cfg
+mujs-config
   mujs-section
   *:not(input[type='text'], input[type='number'], [data-theme], [data-blacklist]),
 .mainbtn,
-.mainframe,
+mujs-mainframe,
 mujs-btn {
   cursor: pointer !important;
 }

@@ -1,5 +1,7 @@
 import { PathLike } from 'node:fs';
 
+type _PathLike = string | URL;
+
 export interface UserJS {
   name: string;
   description: string;
@@ -7,7 +9,7 @@ export interface UserJS {
   license?: string;
   bugs?: URL;
   homepage?: URL;
-  icon?: PathLike;
+  icon?: _PathLike;
   downloadURL?: URL;
   updateURL?: URL;
   url_source?: URL;
@@ -15,22 +17,24 @@ export interface UserJS {
   build: {
     source: {
       languageList: string;
-      [source: string]: PathLike;
+      [source: string]: _PathLike;
     };
     watch: {
       files: string[];
-      dirs: PathLike[];
+      directories: string[];
+      /** @deprecated */
+      dirs?: string[];
     };
     paths: {
       fileName: string;
-      dir: PathLike;
-      i18n?: {
+      dir: _PathLike;
+      i18n: {
         default: string;
-        dir: PathLike;
+        dir: _PathLike;
       };
       dev?: {
         fileName?: string;
-        dir?: PathLike;
+        dir?: _PathLike;
       };
     };
   };

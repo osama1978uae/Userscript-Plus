@@ -5,5 +5,5 @@ import { PathLike } from 'node:fs';
  *
  * @param dir - The directory to load the structures from
  */
-export declare function loadLanguages(dir: PathLike, recursive?: boolean): Promise<Map<string, { [key: string]: string }>>;
+export declare function loadLanguages(dir: PathLike, recursive?: boolean): Promise<Map<string, Record<PropertyKey, string>>>;
 // export declare function loadLanguages<T>(dir: PathLike, recursive?: boolean): Promise<T[]>;

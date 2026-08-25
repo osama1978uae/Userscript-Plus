@@ -1,7 +1,7 @@
 // import GM from '@types/greasemonkey';
 // import '@types/tampermonkey';
 import '@violentmonkey/types';
-import { config, FilterLayout, UserJSEngine, type GSForkQuery } from './types';
+import { config, ConfigElement, UserJSEngine, type GSForkQuery } from './types';
 import './scheduler';
 
 /** [i18n directory](https://github.com/magicoflolis/Userscript-Plus/tree/master/src/_locales) */
@@ -13,9 +13,20 @@ export const translations: {
 /** [source code](https://github.com/magicoflolis/Userscript-Plus/blob/master/src/sass/_main.scss) */
 export const main_css: string;
 
+export const BLANK_PAGE: 'about:blank';
+
+/**
+ * Some sites will alter or remove document functions
+ * To get around this we bind them to the `_self` object
+ *
+ * This method is based on uBlock Origin `scriptlets.js` file
+ *
+ * [scriptlets.js](https://github.com/gorhill/uBlock/blob/master/src/js/resources/scriptlets.js)
+ */
 export interface safeHandles {
   XMLHttpRequest: typeof XMLHttpRequest;
   CustomEvent: typeof CustomEvent;
+  HTMLElement: typeof HTMLElement;
   customElements: typeof customElements;
   createElement: typeof document.createElement;
   createElementNS: typeof document.createElementNS;
@@ -109,17 +120,7 @@ export interface LanguageTranslations {
 
 export declare function i18n$<K extends keyof Translations>(
   key: string
-): Translations[K] | 'Unknown';
-
-/**
- * Some sites will alter or remove document functions
- * To get around this we bind them to the `userjs` object
- *
- * This method is based on uBlock Origin [scriptlets.js](https://github.com/gorhill/uBlock/blob/master/assets/resources/scriptlets.js)
- */
-export declare function safeSelf(): safeHandles;
-
-export declare function loadCSS(css: string, name: string): HTMLStyleElement | undefined;
+): Translations[K] | 'INVALID KEY';
 
 export declare function observe<E extends Node>(
   element: E,
@@ -139,29 +140,32 @@ export declare function observe<E extends Node>(
  */
 export declare function openTab(url: string | URL): WindowProxy | null;
 
-export interface StorageSystem {
-  prefix: string;
-  events: Set<Function | number>;
+export class StorageSystem {
+  public static prefix: string;
+  public static events: Set<() => void | number>;
   /**
    * Alias of `window.localStorage.getItem`
    */
-  getItem<K extends string>(key: K): string | null;
+  public static getItem<K extends string>(key: K): string | null;
 
-  has<K extends string>(key: K): boolean;
+  public static has<K extends string>(key: K): boolean;
 
   /**
    * Alias of `window.localStorage.setItem`
    */
-  setItem<K extends string, V extends string>(key: K, value: V): void;
+  public static setItem<K extends string, V extends string>(key: K, value: V): StorageSystem;
 
   /**
    * Alias of `window.localStorage.removeItem`
    */
-  remove<K extends string>(key: K): void;
+  public static remove<K extends string>(key: K): StorageSystem;
 
-  addListener<T>(name: string, callback: VMScriptGMValueChangeCallback<T>): number | void;
+  public static addListener<T>(
+    name: string,
+    callback: VMScriptGMValueChangeCallback<T>
+  ): number | StorageSystem;
 
-  attach(): void;
+  public static attach(): StorageSystem;
 
   /**
    * Set value - Saves key to either GM managed storage or `window.localStorage`
@@ -170,7 +174,7 @@ export interface StorageSystem {
    *
    * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API)
    */
-  setValue<K extends string, V>(key: K, v: V): Promise<void>;
+  public static setValue<K extends string, V>(key: K, v: V): Promise<StorageSystem>;
 
   /**
    * Get value
@@ -179,10 +183,11 @@ export interface StorageSystem {
    *
    * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API)
    */
-  getValue<K extends string, D>(key: K, def?: D): Promise<D>;
+  public static getValue<K extends string, D>(key: K, def?: D): Promise<D>;
 }
 
 export interface Network {
+  // requestURL: string | Request | URL
   /**
    * Fetch a URL with fetch API as fallback
    *
@@ -194,8 +199,8 @@ export interface Network {
    *
    * [Fetch MDN Reference](https://developer.mozilla.org/docs/Web/API/Fetch_API)
    */
-  req<T = string | Blob | ArrayBuffer | Document | object | Response>(
-    url: RequestInfo | URL,
+  req<R = string | Request | URL, T = string | Blob | ArrayBuffer | Document | object | Response>(
+    requestURL: R,
     method: Request['method'],
     responseType: VMScriptResponseType,
     data: VMScriptGMXHRDetails<T> | RequestInit,
@@ -203,62 +208,62 @@ export interface Network {
   ): Promise<T>;
   format(bytes: number, decimals: number): string;
   sizes: string[];
-  xmlRequest<T = string | Blob | ArrayBuffer | Document | object | Response>(
-    details: VMScriptGMXHRDetails<T> | RequestInit
-  ): Promise<T | typeof GM_xmlhttpRequest<T>>;
-  bscStr<S extends string>(str: S, lowerCase: boolean): S;
 }
 //#region Testing crap
 export class Timeout {
-  public constructor();
   public ids: number[];
-  public set<R>(delay: number, reason?: R): Promise<void|R>;
-  public clear(...ids: number[]): void;
+  public constructor();
+  public set<R>(delay: number, reason?: R | undefined): Promise<unknown>;
+  public clear(...ids: number[]): this;
 }
 export class Tabs {
-  public constructor(root: HTMLElement);
+  // public eventListeners: {
+  //   [event in keyof tabEvents]: Set<{ listener: tabEvents[event]; options?: { once: true } }>;
+  // };
+  public events: Set<{
+    type: keyof tabEvents;
+    listener: tabEvents[keyof tabEvents];
+    options?: { once: true };
+  }>;
   public pool: Set<HTMLElement>;
-  public blank: 'about:blank';
+  public blank: typeof BLANK_PAGE;
+  // public BANG: string;
   public protocal: 'mujs:';
   public protoReg: RegExp;
   public el: {
-    add: HTMLElement;
-    head: HTMLElement;
-    root: HTMLElement;
+    [key: string]: HTMLElement;
   };
   public custom: () => void;
-  public getTab<S extends string>(hostname: S): HTMLElement | undefined;
-  public getActive(): HTMLElement | undefined;
-  public intFN<S extends string>(hostname: S): void;
-  public active<T extends HTMLElement>(tab: T, build?: boolean): void;
-  public close<T extends HTMLElement>(tab: T): void;
-  public create(hostname?: string): HTMLElement | undefined;
+  public constructor(root: HTMLElement);
+  public get _pool(): HTMLElement[];
+  public get _active(): HTMLElement | null;
+  public getTab<H>(hostname: H): HTMLElement | null;
+  public validate<H>(hostname: H): string;
+  public addListener<K extends keyof tabEvents>(
+    type: K,
+    listener: tabEvents[K],
+    options?: {
+      once: true;
+    }
+  ): void;
+  private dispatch<K extends keyof tabEvents>(type: K, ...args: unknown[]): this;
+  public intFN<H>(hostname: H): this;
+  public active<T extends HTMLElement>(tab: T, build?: boolean | undefined): this;
+  public close<T extends HTMLElement>(tab: T): this;
+  public create(hostname?: string | undefined): HTMLElement | null;
 }
-
-export interface mujsName extends HTMLTableCellElement {
-  _mujs: {
-    fmore: HTMLElement;
-    fBtns: HTMLElement;
-    codeArea: HTMLTextAreaElement;
-  }
-}
-
-export interface cfgpage extends HTMLElement {
-  _mujs: {
-    base: {
-      text: string;
-      tag: string;
-      value: string;
-      type: HTMLInputElement['type'];
-      attrs: object;
-      default: string | boolean | number | UserJSEngine | FilterLayout;
-      cache: string | boolean | number | UserJSEngine | FilterLayout;
-      elem: HTMLInputElement | HTMLSelectElement;
-      elemUrl?: HTMLInputElement;
-      elemToken?: HTMLInputElement;
-    }[];
-    sections: Set<HTMLElement>;
-  }
+export interface tabEvents {
+  active: (this: Tabs, tab: HTMLElement, build: boolean) => void;
+  close: (this: Tabs, tab: HTMLElement) => void;
+  create: (
+    this: Tabs,
+    tab: HTMLElement,
+    tabHost: HTMLElement,
+    tabClose: HTMLElement,
+    host: string,
+    hostname: string | undefined
+  ) => void;
+  internal: (this: Tabs, tab: HTMLElement) => void;
 }
 
 export class Container {
@@ -268,8 +273,8 @@ export class Container {
   public domain: string;
   public ready: boolean;
   public injected: boolean;
-  public shadowRoot?: ShadowRoot;
-  public shadowSupport: boolean;
+  // public shadowRoot?: ShadowRoot;
+  // public shadowSupport: boolean;
   public frame: HTMLElement;
   public hostCache?: Map<string, HTMLElement>;
   public userjsCache: Map<number, GSForkQuery>;
@@ -288,7 +293,7 @@ export class Container {
   public mainframe?: HTMLElement;
   public countframe?: HTMLElement;
   public mainbtn?: HTMLElement;
-  public urlBar?: HTMLInputElement;
+  public urlBar: HTMLInputElement;
   public rateContainer?: HTMLElement;
   public footer?: HTMLElement;
   public tabbody?: HTMLElement;
@@ -298,8 +303,8 @@ export class Container {
   public tabhead?: HTMLTableSectionElement;
   public header?: HTMLElement;
   public tbody?: HTMLTableSectionElement;
-  public cfgpage: cfgpage;
-  public main?: HTMLElement;
+  public cfgpage: ConfigElement;
+  public main: HTMLElement;
   public urlContainer?: HTMLElement;
   public btnframe?: HTMLElement;
   public btnHandles?: HTMLElement;
@@ -312,30 +317,39 @@ export class Container {
   public btngreasy?: HTMLElement;
   public btnnav?: HTMLElement;
   public injFN?: () => void;
-  public inject(callback: (this: this, shadowRoot: this['shadowRoot']) => any, doc?: Document): void;
-  public initFn(): void;
+  public inject(
+    // callback: (this: this, shadowRoot: this['shadowRoot']) => any,
+    callback: (this: this, shadowRoot: ShadowRoot) => unknown,
+    doc?: Document
+  ): this;
+  public initFn(): this;
   public init(): boolean;
-  public remove(): void;
+  public remove(): this;
   public save(): Promise<config>;
   /**
    * @param css - CSS to inject
    * @param name - Name of stylesheet
    * @return Style element
    */
-  public loadCSS<C extends string, N extends string>(css: C, name?: N): HTMLStyleElement | undefined;
+  public loadCSS<C extends string, N extends string>(
+    css: C,
+    name?: N
+  ): HTMLStyleElement | undefined;
   public checkBlacklist<S extends string>(str: S): boolean;
-  public setTheme(): void;
-  public makePrompt<S extends string>(txt: S, dataset?: {}, usePrompt?: boolean): HTMLElement;
-  public showError<E extends string | Error>(...ex: E[]): void;
-  public refresh(): void;
+  public setTheme(): this;
+  public makePrompt<S extends string>(txt: S, dataset?: object, usePrompt?: boolean): HTMLElement;
+  public showError<E extends string | Error>(...ex: E[]): this;
+  public refresh(): this;
+  public reloadConfig(): this;
   /**
    * Redirects sleazyfork userscripts from greasyfork.org to sleazyfork.org
    *
    * Taken from: https://greasyfork.org/scripts/23840
    */
-  public redirect(): void;
-  public timeoutFrame<N extends number>(time?: N): Promise<void>;
+  public redirect(): this;
+  public timeoutFrame<N extends number>(time?: N): Promise<this>;
   public toElem(): HTMLElement[];
+  public get rootElem(): HTMLElement | ShadowRoot;
   public [Symbol.iterator](): Generator<GSForkQuery, void, undefined>;
 }
 
@@ -343,22 +357,24 @@ export class List {
   public constructor(hostname?: string);
   private intEngines: UserJSEngine[];
   private intHost: string;
-  public dispatch(ujs: GSForkQuery): void;
+  public dispatch(ujs: GSForkQuery): this;
   public get engines(): UserJSEngine[];
-  public get host(): string;
+  public get host(): List['intHost'];
   public setEngines<E extends UserJSEngine>(engines?: E[]): E[];
   public setHost<S extends string>(hostname: S): S;
   public getDomain<S extends string>(str?: S): S;
-  public build(): void;
-  public sortRecords(): void;
-  public groupBy(): Record<any, any[]>;
+  public build(): this;
+  public sortRecords(): this;
+  public groupBy(): Record<string | number | symbol, unknown[]>;
   public [Symbol.iterator](): Generator<GSForkQuery, void, undefined>;
 }
 //#endregion
 
 declare global {
   let translations: {
-    [i18n: string]: string;
+    [i18n: string]: {
+      [key: string]: string;
+    };
   };
   let userjs: {
     /**

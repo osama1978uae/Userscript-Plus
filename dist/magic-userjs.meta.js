@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      7.6.11
+// @version      8.0.0
 // @name         Magic Userscript+ : Show Site All UserJS
 // @name:ar      Magic Userscript+: عرض جميع ملفات UserJS
 // @name:de      Magic Userscript+ : Website anzeigen Alle UserJS
@@ -56,6 +56,8 @@
 // @grant     GM.setValue
 // @grant     GM.registerMenuCommand
 // @grant     GM.xmlHttpRequest
+// @exclude-match     *://*.youtube.com/*
+// @exclude-match     *://*.netflix.com/*
 // @match     https://*/*
 // @noframes
 // @run-at     document-start

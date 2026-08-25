@@ -1,2 +1,7 @@
 packages:
   - 'utils/*'
+allowBuilds:
+  '@swc/core': true
+minimumReleaseAgeExclude:
+  - '@dotenvx/dotenvx@2.17.4'
+  - webpack@5.109.0

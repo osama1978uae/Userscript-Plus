@@ -23,7 +23,16 @@
       "keepProfileChanges": false,
       "url": "https://www.google.com/",
       "addonPath": "${workspaceFolder}/build/firefox",
-      "reloadOnChange": "${workspaceFolder}/src/**",
+      "reloadOnChange": {
+        "watch": ["${workspaceFolder}/src/**"],
+        "ignore": [
+          "${workspaceFolder}/node_modules/**",
+          "${workspaceFolder}/build",
+          "${workspaceFolder}/tools",
+          "${workspaceFolder}/utils",
+          "${workspaceFolder}/**/*.ts"
+        ]
+      },
       "firefoxArgs": ["--devtools"],
       "pathMappings": [
         {
@@ -36,7 +45,7 @@
         }
       ],
       "log": {
-        "fileName": "${workspaceFolder}/log.txt",
+        "fileName": "${workspaceFolder}/build/log.txt",
         "fileLevel": {
           "default": "Debug"
         }
