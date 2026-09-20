@@ -2,6 +2,7 @@
 class con extends null {
   static #title = '[%cMagic Userscript+%c]';
   static #color = 'color: rgb(29, 155, 240);';
+  static #alerts = new Set();
   /**
    * @param {unknown[]} msg
    */
@@ -25,7 +26,10 @@ class con extends null {
     for (const e of msg.filter(
       (i) => i instanceof Error && 'cause' in i && !Object.is(i.name, '')
     )) {
-      con.alert(`${t} ${e.message} Caused by: ${e.cause}`);
+      if (!con.#alerts.has(e.message)) {
+        con.#alerts.add(e.message);
+        con.alert(`${t} ${e.message} Caused by: ${e.cause}`);
+      }
     }
   }
   /**
@@ -44,10 +48,126 @@ class con extends null {
    * @param {unknown} message
    */
   static alert(message) {
-    if (typeof alert !== 'undefined') alert(message);
+    if (typeof alert !== 'undefined') {
+      alert(message);
+    }
   }
 }
-const { err, info } = con;
+// #endregion
+
+// #region Custom Elements Compatibility
+/**
+ * Check for the browser's genuine `HTMLElement` interface object.
+ *
+ * The genuine interface object inherits from `Element`,
+ * ES5 shims are plain functions that inherit from `Function.prototype`.
+ * @param {unknown} fn
+ * @returns {fn is typeof HTMLElement}
+ */
+const isNativeHTMLElement = (fn) => {
+  try {
+    return (
+      typeof fn === 'function' &&
+      Reflect.getPrototypeOf(fn) === Element &&
+      Reflect.getPrototypeOf(/** @type {Function} */ (fn).prototype) === Element.prototype
+    );
+  } catch {
+    return false;
+  }
+};
+/**
+ * Recover the genuine `HTMLElement` constructor, even if the webpage replaced `window.HTMLElement`
+ * @returns {typeof HTMLElement | undefined}
+ */
+const resolveHTMLElement = () => {
+  /** @type {Array<() => unknown>} */
+  const candidates = [
+    /** Untouched `window.HTMLElement` */
+    () => HTMLElement,
+    /** Shims keep the genuine prototype, which still points to the genuine constructor */
+    () => HTMLElement.prototype.constructor,
+    /** Every built-in element interface inherits from the genuine constructor */
+    () => Reflect.getPrototypeOf(HTMLDivElement),
+    () => Reflect.getPrototypeOf(HTMLSpanElement),
+    () => Reflect.getPrototypeOf(HTMLUnknownElement)
+  ];
+  for (const candidate of candidates) {
+    try {
+      const fn = candidate();
+      if (isNativeHTMLElement(fn)) return fn;
+    } catch {
+      /** Try the next candidate */
+    }
+  }
+  return undefined;
+};
+/**
+ * Genuine `HTMLElement`, base class of every custom element in this UserJS
+ * @type {typeof HTMLElement}
+ */
+const NativeHTMLElement = /** @type {typeof HTMLElement} */ (resolveHTMLElement());
+if (NativeHTMLElement == null) {
+  con.err(new Error('Failed to find the native "HTMLElement"', { cause: 'customElements' }));
+  return;
+}
+/**
+ * `define` and `get` of the genuine `CustomElementRegistry`.
+ *
+ * The ES5 adapter only overwrites them on the global `window.customElements` **instance**,
+ * the prototype is left untouched.
+ */
+const registryProto = /** @type {CustomElementRegistry} */ (
+  typeof CustomElementRegistry === 'function'
+    ? CustomElementRegistry.prototype
+    : Reflect.getPrototypeOf(customElements)
+);
+const nativeRegistry = {
+  define: registryProto.define,
+  get: registryProto.get
+};
+if (typeof nativeRegistry.define !== 'function' || typeof nativeRegistry.get !== 'function') {
+  con.err(new Error('Failed to find the native "customElements"', { cause: 'customElements' }));
+  return;
+}
+/**
+ * Custom elements registry used by this UserJS.
+ *
+ * Prefers a scoped registry (keeps the UserJS elements away from the webpage) but only if
+ * the browser actually upgrades elements created with it, otherwise falls back to the global registry.
+ * @type {CustomElementRegistry}
+ */
+const ce = (() => {
+  try {
+    const probeName = 'mujs-probe';
+    const probeRegistry = Reflect.construct(CustomElementRegistry, []);
+    class Probe extends NativeHTMLElement {}
+    Reflect.apply(nativeRegistry.define, probeRegistry, [probeName, Probe]);
+    const probe = Reflect.apply(Document.prototype.createElement, document, [
+      probeName,
+      { customElementRegistry: probeRegistry }
+    ]);
+    if (probe instanceof Probe) return Reflect.construct(CustomElementRegistry, []);
+  } catch {
+    /** Scoped registries are not supported, e.g. "Illegal constructor" */
+  }
+  return customElements;
+})();
+/**
+ * Define a custom element using the genuine `CustomElementRegistry.prototype.define`
+ *
+ * Never use `ce.define` directly, on pages with the ES5 adapter it wraps the class
+ * and calls it without `new` (`Class constructor cannot be invoked without 'new'`)
+ * @param {string} name - Custom element name
+ * @param {CustomElementConstructor} constructor - Custom element class
+ */
+const defineElement = (name, constructor) => {
+  const existing = Reflect.apply(nativeRegistry.get, ce, [name]);
+  if (existing === constructor) return;
+  if (existing !== undefined) {
+    throw new Error(`"${name}" is already defined by another script`);
+  }
+  Reflect.apply(nativeRegistry.define, ce, [name, constructor]);
+};
 // #endregion
 
 // TODO: Option to only load certain SE's on site?
@@ -79,8 +199,6 @@ const { err, info } = con;
 // }
 
 // #region Globals
-/** @type { import("../typings/UserJS.d.ts").safeHandles } */
-let _self = {};
 /**
  * <https://github.com/zloirock/core-js/blob/master/packages/core-js/internals/global-this.js>
  */
@@ -101,17 +219,10 @@ if (g == null) {
   return;
 }
 /** @type { import("../typings/UserJS.d.ts").safeHandles } */
-const safe = {
-  XMLHttpRequest: g.XMLHttpRequest,
-  // HTMLElement: g.HTMLElement,
-  customElements: g.customElements,
-  // customElements: 'userAgentData' in g.navigator ? new CustomElementRegistry() : g.customElements,
+const _self = {
   createElement: g.document.createElement.bind(g.document),
   createElementNS: g.document.createElementNS.bind(g.document),
   createTextNode: g.document.createTextNode.bind(g.document),
-  setTimeout: g.setTimeout,
-  clearTimeout: g.clearTimeout,
-  navigator: g.navigator,
   scheduler: {
     postTask(callback, options) {
       if ('scheduler' in g && 'postTask' in g.scheduler) {
@@ -124,7 +235,7 @@ const safe = {
         return Promise.reject(new TypeError('"delay" must be a positive number.'));
       }
       return new Promise((resolve) => {
-        g.setTimeout(() => {
+        setTimeout(() => {
           resolve(callback());
         }, options.delay);
       });
@@ -134,7 +245,7 @@ const safe = {
         return g.scheduler.yield();
       }
       return new Promise((resolve) => {
-        g.setTimeout(resolve, 0);
+        setTimeout(resolve, 0);
       });
     }
   },
@@ -151,32 +262,26 @@ const safe = {
     }, {});
   }
 };
-for (const [k, v] of Object.entries(safe)) {
+for (const [k, v] of Object.entries(_self)) {
   if (/scheduler|navigator|customElements/.test(k) || typeof v === 'function') continue;
   throw new Error(`Safe "${k}" returned "${v}"`, { cause: '_self' });
 }
-_self = safe;
 // #endregion
 //#region Placeholders
 const BLANK_FN = function () {};
 const BLANK_ASYNC_FN = async function () {};
 const BLANK_PAGE = 'about:blank';
+const winURL = (() => {
+  try {
+    return new URL(window.location.href);
+  } catch {
+    return new URL(BLANK_PAGE);
+  }
+})();
 /**
  * @type { import("../typings/types.d.ts").config }
  */
 let cfg;
-/**
- * @type {URL}
- */
-let url;
-try {
-  /** For some reason `window.location.href` isn't always the same as `location.href` */
-  if (typeof window == 'object') {
-    url = new URL(window.location.href);
-  }
-} catch {
-  url = new URL(BLANK_PAGE);
-}
 //#endregion
 /**
  * @template {string} S
@@ -329,17 +434,13 @@ const copyObject = (object) => JSON.parse(JSON.stringify(object));
 // #endregion
 // #region Constants
 const isMobile = (() => {
-  const { navigator } = _self;
-  if (navigator) {
-    const { userAgent = '', userAgentData = {} } = navigator;
-    const { platform = '', mobile = false } = Object(userAgentData);
-    return (
-      /Mobile|Tablet/.test(String(userAgent)) ||
-      Boolean(mobile) ||
-      /Android|Apple/.test(String(platform))
-    );
-  }
-  return false;
+  const { userAgent = '', userAgentData = {} } = navigator;
+  const { platform = '', mobile = false } = Object(userAgentData);
+  return (
+    /Mobile|Tablet/.test(String(userAgent)) ||
+    Boolean(mobile) ||
+    /Android|Apple/.test(String(platform))
+  );
 })();
 class $GM extends null {
   static #INFO = {
@@ -363,22 +464,25 @@ class $GM extends null {
     return fn;
   }
   static addElement() {
+    /** @type { typeof GM_addElement } */
     const _ =
-      (typeof GM.addElement !== 'undefined' && isFN(GM.addElement) && GM.addElement) ||
+      ($GM.isGM && typeof GM.addElement !== 'undefined' && isFN(GM.addElement) && GM.addElement) ||
       (typeof GM_addElement !== 'undefined' && isFN(GM_addElement) && GM_addElement) ||
       BLANK_FN;
     return _(...arguments);
   }
   static openInTab() {
+    /** @type { typeof GM_openInTab } */
     const _ =
-      (typeof GM.openInTab !== 'undefined' && isFN(GM.openInTab) && GM.openInTab) ||
+      ($GM.isGM && typeof GM.openInTab !== 'undefined' && isFN(GM.openInTab) && GM.openInTab) ||
       (typeof GM_openInTab !== 'undefined' && isFN(GM_openInTab) && GM_openInTab) ||
       window.open;
     return _(...arguments);
   }
   static get info() {
+    /** @type { typeof GM_info } */
     const _ =
-      (typeof GM.info !== 'undefined' && isObj(GM.info) && GM.info) ||
+      ($GM.isGM && typeof GM.info !== 'undefined' && isObj(GM.info) && GM.info) ||
       (typeof GM_info !== 'undefined' && isObj(GM_info) && GM_info) ||
       $GM.#INFO;
     return _;
@@ -386,23 +490,24 @@ class $GM extends null {
   static async setValue() {
     /** @type { typeof GM.setValue | typeof GM_setValue } */
     const _ =
-      (typeof GM.setValue !== 'undefined' && isFN(GM.setValue) && GM.setValue) ||
+      ($GM.isGM && typeof GM.setValue !== 'undefined' && isFN(GM.setValue) && GM.setValue) ||
       (typeof GM_setValue !== 'undefined' && isFN(GM_setValue) && $GM.wrap(GM_setValue)) ||
       BLANK_ASYNC_FN;
-    return await _(...arguments);
+    return _(...arguments);
   }
   static async getValue() {
     /** @type { typeof GM.getValue | typeof GM_getValue } */
     const _ =
-      (typeof GM.getValue !== 'undefined' && isFN(GM.getValue) && GM.getValue) ||
+      ($GM.isGM && typeof GM.getValue !== 'undefined' && isFN(GM.getValue) && GM.getValue) ||
       (typeof GM_getValue !== 'undefined' && isFN(GM_getValue) && $GM.wrap(GM_getValue)) ||
       BLANK_ASYNC_FN;
-    return await _(...arguments);
+    return _(...arguments);
   }
   static registerMenuCommand() {
     /** @type { typeof GM.registerMenuCommand | typeof GM_registerMenuCommand } */
     const _ =
-      (typeof GM.registerMenuCommand !== 'undefined' &&
+      ($GM.isGM &&
+        typeof GM.registerMenuCommand !== 'undefined' &&
         isFN(GM.registerMenuCommand) &&
         GM.registerMenuCommand) ||
       (typeof GM_registerMenuCommand !== 'undefined' &&
@@ -414,7 +519,10 @@ class $GM extends null {
   static xmlHttpRequest() {
     /** @type { typeof GM.xmlHttpRequest | typeof GM_xmlhttpRequest } */
     const _ =
-      (typeof GM.xmlHttpRequest !== 'undefined' && isFN(GM.xmlHttpRequest) && GM.xmlHttpRequest) ||
+      ($GM.isGM &&
+        typeof GM.xmlHttpRequest !== 'undefined' &&
+        isFN(GM.xmlHttpRequest) &&
+        GM.xmlHttpRequest) ||
       (typeof GM_xmlhttpRequest !== 'undefined' &&
         isFN(GM_xmlhttpRequest) &&
         $GM.wrap(GM_xmlhttpRequest)) ||
@@ -424,7 +532,7 @@ class $GM extends null {
        */
       function (details) {
         return new Promise((resolve, reject) => {
-          const req = new _self.XMLHttpRequest();
+          const req = new XMLHttpRequest();
           let method = 'GET';
           let url = BLANK_PAGE;
           let body;
@@ -646,7 +754,6 @@ class Language extends null {
    * @param { T } s
    */
   static toDate(s) {
-    const { navigator } = _self;
     const d = typeof s === 'string' ? new Date(s) : s;
     return new Intl.DateTimeFormat(navigator.language).format(d);
   }
@@ -655,7 +762,6 @@ class Language extends null {
    * @param { T } n
    */
   static toNumber(n) {
-    const { navigator } = _self;
     return new Intl.NumberFormat(navigator.language).format(n);
   }
   /**
@@ -681,7 +787,6 @@ class Language extends null {
     return resp;
   }
   static get current() {
-    const { navigator } = _self;
     return navigator.language.split('-').find((l) => Language.#map.has(l)) || 'en';
   }
 }
@@ -758,7 +863,9 @@ function addClass(elem, str) {
 function formAttrs(elem, attr) {
   if (elem != null && isObj(attr)) {
     for (const [key, value] of Object.entries(attr)) {
-      if (/^_mujs/i.test(key)) {
+      if (/^useGM|customElementRegistry/.test(key)) {
+        continue;
+      } else if (/^_mujs/i.test(key)) {
         elem[key] = value;
       } else if (isObj(value)) {
         formAttrs(elem[key], value);
@@ -787,7 +894,8 @@ function formAttrs(elem, attr) {
  * @type { typeof import("../typings/types.d.ts").make }
  */
 const make = (tagName, ...attributes) => {
-  const el = _self.createElement(tagName);
+  /** @type {HTMLElement} */
+  const el = _self.createElement(tagName, { customElementRegistry: ce });
   for (let i = 0; i < attributes.length; i++) {
     const _attr = attributes[i];
     if (i === 0) {
@@ -801,9 +909,6 @@ const make = (tagName, ...attributes) => {
   return el;
 };
 // #endregion
-// /**
-//  * @type { import("../typings/types.d.ts").dom }
-//  */
 class dom extends null {
   /**
    * @template {HTMLElement} E
@@ -1052,13 +1157,6 @@ class Tabs {
       eventSet.add(obj);
     }
   }
-  // /**
-  //  * @param {keyof tabEvents} type
-  //  */
-  // #dispatcher(type, ...args) {
-  //   const event = new CustomEvent(type, { detail: { ...args } });
-  //   this.dispatchEvent(event);
-  // }
   /**
    * @template {keyof tabEvents} K
    * @param {CustomEvent<K>} event
@@ -1145,7 +1243,6 @@ class Tabs {
 
     const [, host] = this.protoReg.exec(hostname) ?? [];
     this.#dispatch('create', tab, tabHost, tabClose, host, hostname);
-    // this.#dispatcher('create', tab, tabHost, tabClose, host, hostname);
     return tab;
   }
 }
@@ -1163,7 +1260,7 @@ class Timeout {
   set(delay, reason) {
     return new Promise((resolve, reject) => {
       /** @type {number} */
-      const id = _self.setTimeout(() => {
+      const id = setTimeout(() => {
         this.clear(id);
         if (typeof reason === 'string') {
           reject(new Error(reason));
@@ -1180,7 +1277,7 @@ class Timeout {
   clear(...ids) {
     this.ids = this.ids.filter((id) => {
       if (ids.includes(id)) {
-        _self.clearTimeout(id);
+        clearTimeout(id);
         return false;
       }
       return true;
@@ -1280,7 +1377,12 @@ class IconSVG extends null {
     }
     try {
       if (typeof sel.html === 'string') {
-        svgElem.innerHTML = sel.html;
+        if (window.trustedTypes.defaultPolicy) {
+          const h = window.trustedTypes.defaultPolicy.createHTML(sel.html);
+          svgElem.innerHTML = h;
+        } else {
+          svgElem.innerHTML = sel.html;
+        }
         svgElem.setAttribute('id', `mujs_${key}`);
       }
     } catch {
@@ -1296,29 +1398,31 @@ class IconSVG extends null {
 }
 //#endregion
 class jsStorage extends null {
-  static #store = window.localStorage || {};
   static prefix = 'MUJS';
+  static get store() {
+    return window.localStorage;
+  }
   static getItem(key) {
-    return jsStorage.#store.getItem(`${jsStorage.prefix}-${key}`);
+    return jsStorage.store.getItem(`${jsStorage.prefix}-${key}`);
   }
   static has(key) {
     return jsStorage.getItem(key) != null;
   }
   static setItem(key, value) {
-    jsStorage.#store.setItem(`${jsStorage.prefix}-${key}`, value);
+    jsStorage.store.setItem(`${jsStorage.prefix}-${key}`, value);
     return jsStorage;
   }
   static remove(key) {
-    jsStorage.#store.removeItem(`${jsStorage.prefix}-${key}`);
+    jsStorage.store.removeItem(`${jsStorage.prefix}-${key}`);
     return jsStorage;
   }
   static async setValue(key, v) {
     if (v) {
-      v = typeof v === 'string' ? v : JSON.stringify(v);
+      const val = typeof v === 'string' ? v : JSON.stringify(v);
       if ($GM.isGM) {
-        await $GM.setValue(key, v);
+        await $GM.setValue(key, val);
       } else {
-        jsStorage.setItem(key, v);
+        jsStorage.setItem(key, val);
       }
     }
     return jsStorage;
@@ -1331,7 +1435,6 @@ class jsStorage extends null {
    */
   static async getValue(key, def) {
     try {
-      const _def = Object.assign({}, def);
       /**
        * @template {typeof def} T
        * @param {T | string} s
@@ -1346,26 +1449,18 @@ class jsStorage extends null {
             /* empty */
           }
         }
-        return _def;
+        return def;
       };
       /** @type { typeof def } */
       const store = $GM.isGM
-        ? await $GM.getValue(key, JSON.stringify(_def))
+        ? await $GM.getValue(key, JSON.stringify(def))
         : jsStorage.getItem(key);
+      if (store == null) {
+        return def;
+      }
       return parse(store);
-      // if ($GM.isGM) {
-      //   /** @type { typeof def } */
-      //   const GMType = await $GM.getValue(key, JSON.stringify(def));
-      //   if (typeof GMType === 'string') {
-      //     return parse(GMType);
-      //   }
-      //   // const r = (GMType && JSON.parse(GMType)) || def;
-      //   // if (GMType) return (isEmpty(r) && def) || r;
-      // }
-      // def = JSON.parse(jsStorage.getItem(key));
-      // return JSON.parse(jsStorage.getItem(key)) ?? def;
     } catch (ex) {
-      ex.cause = 'getValue';
+      if (ex instanceof Error) ex.cause = 'getValue';
       con.err(ex);
       return def;
     }
@@ -1529,9 +1624,6 @@ const Counter = {
   }
 };
 // #region Container
-// /**
-//  * @type { typeof import("../typings/UserJS.d.ts").Container }
-//  */
 class Container {
   static prompts = [];
   injected;
@@ -1552,8 +1644,8 @@ class Container {
     this.showError = this.showError.bind(this);
     this.toElem = this.toElem.bind(this);
 
-    this.webpage = url;
-    this.host = getHostname(url.hostname ?? BLANK_PAGE);
+    this.webpage = winURL;
+    this.host = getHostname(winURL.hostname ?? BLANK_PAGE);
     this.injected = false;
 
     if (this.#frame == null) {
@@ -1580,6 +1672,7 @@ class Container {
     };
     /** @type {ReturnType<typeof primaryFN>} */
     this.injFN = BLANK_FN;
+
     window.addEventListener('beforeunload', this, false);
   }
   get frame() {
@@ -1640,6 +1733,14 @@ class Container {
           this.initFn();
           if (isFN(callback) && this.elementsReady) this.injFN = callback();
         }
+        if (isEmpty(this.frame.dataset.insertedBy)) {
+          const msg = 'Failed to inject due to the current website!';
+          if (this.host === 'youtube.com') {
+            con.err(msg);
+          } else {
+            con.err(new Error(msg, { cause: this.host }));
+          }
+        }
       } catch (ex) {
         con.err(ex);
         this.remove();
@@ -1659,7 +1760,8 @@ class Container {
       if (host === 'settings') {
         dom.cl.remove(cfgpage, 'hidden');
         dom.cl.add(table, 'hidden');
-        dom.prop(urlBar, 'placeholder', 'Search settings'); // TODO: Add translation
+        // TODO: Add translation
+        dom.prop(urlBar, 'placeholder', 'Search settings');
       }
     });
     this.Tabs.addListener('active', function (tab, build) {
@@ -1906,7 +2008,7 @@ class Container {
         }
       }
       await jsStorage.setValue('Config', config);
-      info('Saved config:', { config, cfg, DEFAULT_CONFIG });
+      con.info('Saved config:', { config, cfg, DEFAULT_CONFIG });
       this.redirect();
     }
     return cfg;
@@ -1972,9 +2074,6 @@ class Container {
         elHead.appendChild(e);
       }
     }
-    // const elHead = make('mu-js', 'prompt-head', {
-    //   innerHTML: `${IconSVG.load('refresh')} ${txt}`
-    // });
     el.append(elHead);
     if (usePrompt) {
       const elPrompt = make('mu-js', 'prompt-body', { dataset });
@@ -2033,13 +2132,6 @@ class Container {
     Counter.reset();
     dom.cl.remove(this.toElem(), 'hidden');
     dom.cl.remove(this.cfgpage._mujs.sections, 'hidden');
-    // for (const elem of [this.tabbody, this.rateContainer, this.footer]) {
-    //   if (elem) {
-    //     for (const c of [...elem.children]) {
-    //       if (c) c.remove();
-    //     }
-    //   }
-    // }
     dom.rmChildren([this.tabbody, this.rateContainer, this.footer]);
     return this;
   }
@@ -2102,7 +2194,7 @@ class Container {
           /\/\/([^.]+\.)?(greasyfork|sleazyfork)\.org/,
           '//$1' + otherSite + '.org'
         );
-        info(`Redirecting to "${str}"`);
+        con.info(`Redirecting to "${str}"`);
         if (isFN(locObj.assign)) {
           locObj.assign(str);
         } else {
@@ -2146,7 +2238,7 @@ const respHandles = {
   build: BLANK_ASYNC_FN
 };
 //#region Custom Elements
-class MainUserJS extends HTMLElement {
+class MainUserJS extends NativeHTMLElement {
   constructor() {
     super();
     if (!isFN(this.attachShadow)) {
@@ -2160,11 +2252,9 @@ class MainUserJS extends HTMLElement {
     this.style = 'visibility: visible;';
 
     this._mujs = {
-      webpage: url,
-      host: getHostname(url.hostname)
+      webpage: winURL,
+      host: getHostname(winURL.hostname)
     };
-
-    // container.root = make('mujs-root');
 
     this._mujsElements = {
       root: container.root
@@ -2222,7 +2312,7 @@ class MainUserJS extends HTMLElement {
     container.elementsReady = container.init();
   }
 }
-class CountFrame extends HTMLElement {
+class CountFrame extends NativeHTMLElement {
   static observedAttributes = ['count'];
   constructor() {
     super();
@@ -2240,7 +2330,7 @@ class CountFrame extends HTMLElement {
     if (!Object.is(oldValue, newValue)) this.textContent = newValue;
   }
 }
-class ConfigElement extends HTMLElement {
+class ConfigElement extends NativeHTMLElement {
   constructor() {
     super();
     this._mujs = {
@@ -2249,7 +2339,7 @@ class ConfigElement extends HTMLElement {
     };
   }
 }
-class MainFrame extends HTMLElement {
+class MainFrame extends NativeHTMLElement {
   constructor() {
     super();
     this.initClick = true;
@@ -2282,7 +2372,6 @@ class MainFrame extends HTMLElement {
           dom.cl.add([container.btnfullscreen, container.main], 'expanded');
           dom.rmChildren(container.btnfullscreen);
           IconSVG.load('collapse', container.btnfullscreen);
-          // dom.prop(container.btnfullscreen, 'innerHTML', IconSVG.load('collapse'));
         }
       } else if (evt.type === 'mouseenter') {
         this.style.opacity = container.opacityMax;
@@ -2295,21 +2384,26 @@ class MainFrame extends HTMLElement {
     for (const e of events) this.addEventListener(e, handle);
   }
 }
-class MainElement extends HTMLElement {
+class MainElement extends NativeHTMLElement {
   constructor() {
     super();
     this._mujs = {};
   }
 }
-try {
-  const ce = _self.customElements;
-  ce.define('main-userjs', MainUserJS);
-  ce.define('count-frame', CountFrame);
-  ce.define('mujs-config', ConfigElement);
-  ce.define('mujs-mainframe', MainFrame);
-  ce.define('mujs-main', MainElement);
-} catch (e) {
-  con.err(e);
+/** @type {Array<[string, CustomElementConstructor]>} */
+const customElementList = [
+  ['main-userjs', MainUserJS],
+  ['count-frame', CountFrame],
+  ['mujs-config', ConfigElement],
+  ['mujs-mainframe', MainFrame],
+  ['mujs-main', MainElement]
+];
+for (const [name, constructor] of customElementList) {
+  try {
+    defineElement(name, constructor);
+  } catch (e) {
+    con.err(e);
+  }
 }
 //#endregion
 // #region Primary Function
@@ -2563,7 +2657,6 @@ function primaryFN() {
               list.append(a);
             }
             container.makePrompt('Multiple detected:', dataset, false, list);
-            // container.makePrompt(`Multiple detected: ${list.outerHTML}`, dataset, false);
           } else {
             doProcess.install(dataUserJS.code_url);
           }
@@ -2616,12 +2709,10 @@ function primaryFN() {
             dom.cl.remove([btnfullscreen, main], 'expanded');
             dom.rmChildren(btnfullscreen);
             IconSVG.load('expand', btnfullscreen);
-            // dom.prop(btnfullscreen, 'innerHTML', IconSVG.load('expand'));
           } else {
             dom.cl.add([btnfullscreen, main], 'expanded');
             dom.rmChildren(btnfullscreen);
             IconSVG.load('collapse', btnfullscreen);
-            // dom.prop(btnfullscreen, 'innerHTML', IconSVG.load('collapse'));
           }
         } else if (cmd === 'hide-list') {
           dom.cl.add(main, 'hidden');
@@ -2630,7 +2721,6 @@ function primaryFN() {
         } else if (cmd === 'save') {
           container.setCache(null, true);
           dom.rmChildren(container.rateContainer);
-          // dom.prop(container.rateContainer, 'innerHTML', '');
           if (!dom.prop(target, 'disabled')) {
             const config = await container.save();
             if (container.cache.rebuild && config.autofetch) respHandles.build();
@@ -2676,7 +2766,6 @@ function primaryFN() {
               list.append(a);
             }
             container.makePrompt('Multiple detected:', dataset, false, list);
-            // container.makePrompt(`Multiple detected: ${list.outerHTML}`, dataset, false);
           } else {
             const code_obj = await dataUserJS._mujs.code.request(false);
             if (typeof code_obj.code === 'string')
@@ -2722,13 +2811,10 @@ function primaryFN() {
             const engine = dataUserJS._mujs.info.engine;
             let pageURL;
             if (engine.name.includes('fork')) {
-              const {
-                navigator: { language }
-              } = _self;
               const { current } = Language;
               pageURL = dataUserJS.url.replace(
                 /\/scripts/,
-                `/${/^(zh|fr|es)/.test(current) ? language : current}/scripts`
+                `/${/^(zh|fr|es)/.test(current) ? navigator.language : current}/scripts`
               );
             } else if (engine.name.includes('github')) {
               const page_url = await Network.req(dataUserJS.page_url, 'GET', 'json', {
@@ -3004,7 +3090,6 @@ function primaryFN() {
       }
       intersect(a, ...arr) {
         const aSet = new Set(a);
-        // if (isFN(aSet.intersect)) return !isBlank(aSet.intersect(new Set(arr)));
         return !isBlank([...aSet].filter((v) => arr.every((b) => b.includes(v))));
       }
       static getNames(patterns = []) {
@@ -3097,7 +3182,7 @@ function primaryFN() {
           return this;
         }
         /** @type { string } */
-        const code = await Network.req(code_url, 'GET', 'text').catch(err);
+        const code = await Network.req(code_url, 'GET', 'text').catch(con.err);
         if (typeof code !== 'string') {
           return this;
         }
@@ -3244,7 +3329,8 @@ function primaryFN() {
     const createjs = (ujs, engine) => {
       const a = [
         ujs.deleted === true,
-        ujs.id === 421603, // No need to list our UserScript
+        /** No need to list our UserScript */
+        ujs.id === 421603,
         cfg.recommend.blacklist.includes(ujs.id),
         cfg.recommend.blacklist.includes(ujs.url)
       ].some((t) => t === true);
@@ -3574,7 +3660,6 @@ function primaryFN() {
       }
 
       dispatch(ujs) {
-        // const { CustomEvent } = _self;
         main.dispatchEvent(new CustomEvent('updateditem', { detail: ujs }));
         return this;
       }
@@ -3608,7 +3693,7 @@ function primaryFN() {
           const bsFilter = loadFilters();
           const hostCache = Array.from(this);
 
-          info('Building list', { hostCache, engines, container, list: this });
+          con.info('Building list', { hostCache, engines, container, list: this });
 
           const gb = this.groupBy();
           const toFetch = engines.filter((engine) => !gb[engine.name]);
@@ -3617,7 +3702,7 @@ function primaryFN() {
           );
           if (!isBlank(toFetch) && isBlank(isCached)) {
             for (const engine of engines) {
-              info(`Fetching from "${engine.name}" for "${host}"`);
+              con.info(`Fetching from "${engine.name}" for "${host}"`);
               const sourceURL = decode(engine.query)
                 .replace(/\{host\}/g, host)
                 .replace(/\{domain\}/g, domain);
@@ -4226,7 +4311,8 @@ function primaryFN() {
                   type: 'text',
                   defaultValue: '',
                   value: engine.token ?? '',
-                  placeholder: 'Paste Access Token', // TODO: add translation
+                  // TODO: add translation
+                  placeholder: 'Paste Access Token',
                   dataset: {
                     engine: 'github-token'
                   }
@@ -4339,16 +4425,15 @@ function primaryFN() {
             dom.cl.add([btnfullscreen, main], 'expanded');
             dom.rmChildren(btnfullscreen);
             IconSVG.load('collapse', btnfullscreen);
-            // dom.prop(btnfullscreen, 'innerHTML', IconSVG.load('collapse'));
           } else {
             dom.cl.remove([btnfullscreen, main], 'expanded');
             dom.rmChildren(btnfullscreen);
             IconSVG.load('expand', btnfullscreen);
-            // dom.prop(btnfullscreen, 'innerHTML', IconSVG.load('expand'));
           }
         }
       });
-      makeRow('Clear on Tab close', 'clearTabCache', 'checkbox', 'load'); // TODO: add translation
+      // TODO: add translation
+      makeRow('Clear on Tab close', 'clearTabCache', 'checkbox', 'load');
 
       makeRow(i18n$('default_sort'), 'autoSort', 'select', 'list');
       makeRow(i18n$('filter'), 'filterlang', 'checkbox', 'list');
@@ -4697,6 +4782,7 @@ const loadDOM = (onDomReady) => {
   }
 };
 async function init() {
+  const strPolicy = (string) => string;
   if (typeof window.trustedTypes !== 'undefined') {
     /**
      * Delay `trustedTypes.createPolicy` creation
@@ -4706,17 +4792,18 @@ async function init() {
       'outlook'
     ].join('|');
     const delayReg = new RegExp(toDelay, 'gi');
-    if (delayReg.test(url.hostname)) {
-      await new Promise((resolve) => _self.setTimeout(resolve, 1000));
+    if (delayReg.test(winURL.hostname)) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     if (window.trustedTypes.defaultPolicy == null) {
       window.trustedTypes.createPolicy('default', {
-        createHTML: (string) => string,
-        createScript: (string) => string,
-        createScriptURL: (string) => string
+        createHTML: strPolicy,
+        createScript: strPolicy,
+        createScriptURL: strPolicy
       });
     }
   }
+
   const config = copyObject(DEFAULT_CONFIG);
   cfg = {
     ...config,
@@ -4727,7 +4814,7 @@ async function init() {
       e.unsupported = e.name.includes('fork') ? ['pornhub.com'] : [];
     return e;
   });
-  info('Config:', cfg);
+  con.info('Config:', cfg);
   loadDOM((doc) => {
     try {
       if (typeof doc === 'undefined')
@@ -4745,6 +4832,9 @@ async function init() {
       }).register(i18n$('userjs_close'), () => {
         container.remove();
       });
+      if (!isNativeHTMLElement(window.HTMLElement)) {
+        con.info('This location overwrites "HTMLElement", using the native "HTMLElement" instead');
+      }
     } catch (ex) {
       con.err(ex);
     }

@@ -1,8 +1,3 @@
-<center><h1>2026-08-09: Reset setting if updating to UserScript v7.6.9</h1></center>
-<div>If WebExtension: https://greasyfork.org/.. to https://api.greasyfork.org/.. </div>
-
----
-
 [![Badge License](https://img.shields.io/github/license/magicoflolis/Userscript-Plus?style=flat-square)](https://github.com/magicoflolis/Userscript-Plus/blob/master/LICENSE)
 [![Badge Issues](https://img.shields.io/github/issues/magicoflolis/Userscript-Plus?style=flat-square)](https://github.com/magicoflolis/Userscript-Plus/issues)
 [![Badge Greasy Fork](https://img.shields.io/greasyfork/dt/421603?style=flat-square)](https://greasyfork.org/scripts/421603)
@@ -35,7 +30,7 @@ Finds available UserScripts and UserStyles for the current webpage, the power of
 > The UserScript only works on `HTTPS` sites! ([https://example.com](https://example.com))
 
 * [Greasy Fork](https://greasyfork.org/scripts/421603)
-* [GitHub Repo](https://github.com/magicoflolis/Userscript-Plus/blob/master/dist/magic-userjs.user.js?raw=1)
+* [GitHub Repository](https://github.com/magicoflolis/Userscript-Plus/blob/master/dist/magic-userjs.user.js?raw=1)
 * [Open UserJS](https://openuserjs.org/scripts/Magic/Magic_Userscript+_Show_Site_All_UserJS) - Outdated
 
 **Web Extension:**

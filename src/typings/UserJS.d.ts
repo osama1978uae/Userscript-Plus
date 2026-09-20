@@ -382,5 +382,6 @@ declare global {
      */
     UserJS: boolean;
     isMobile?: boolean;
+    [key: string]: unknown;
   };
 }

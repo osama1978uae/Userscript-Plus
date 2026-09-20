@@ -14,6 +14,11 @@
 * Finish blacklist section.
 * GitHub engine - filter out UserScript and UserStyles that don't match the host
 
+## v8.1.0
+
+* Fixed [Issue #63](https://github.com/magicoflolis/Userscript-Plus/issues/63#issuecomment-5387786910) (_for real this time!_); broken `window.CustomElements` on YouTube
+* Removed `@exclude-match`'s
+
 ## v8.0.0
 
 > `window.CustomElements` on YouTube is broken, see [Issue #63](https://github.com/magicoflolis/Userscript-Plus/issues/63#issuecomment-5387786910)
